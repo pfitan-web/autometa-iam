@@ -205,3 +205,15 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# --- AJOUTS SPECIFIQUES AUTOMETA-IAM ---
+# Fichier de secrets local
+.env
+
+# Dossier de configuration Streamlit (contient les secrets en local)
+.streamlit/config.toml
+.streamlit/secrets.toml
+
+# Environnement virtuel (si tu en crées un)
+venv/
+.venv/
