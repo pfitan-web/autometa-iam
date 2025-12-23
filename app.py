@@ -6,39 +6,42 @@ import google.generativeai as genai
 import os
 from dotenv import load_dotenv
 
-# 1. CONFIGURATION
+# 1. CONFIGURATION & DESIGN
 st.set_page_config(page_title="AutoMeta-IAM Pro | Expert OEM", layout="wide")
 load_dotenv()
 
-# --- LISTE ÉLARGIE DES MARQUES "TOP 20/80" (OEM & LEADERS IAM) ---
-PREMIUM_BRANDS = [
-    # Filtration & Moteur
-    "PURFLUX", "MANN-FILTER", "MAHLE", "KNECHT", "BOSCH", "HENGST",
-    # Freinage & Liaison au sol
-    "TRW", "ATE", "BREMBO", "DELPHI", "PHINIA", "FERODO", "KYB", "KAYABA", 
-    "MONROE", "LEMFÖRDER", "MOOG", "MEYLE", "SACHS", "BILSTEIN",
-    # Transmission & Distribution
-    "LUK", "SACHS", "VALEO", "SKF", "GATES", "INA", "DAYCO", "CONTINENTAL", "CONTITECH",
-    # Électrique & Thermique
-    "MAGNETI MARELLI", "DENSO", "NGK", "BERU", "PIERBURG", "HELLA", "BEHR", "NRF", "NISSENS",
-    # Spécialistes Qualité
-    "FEBI BILSTEIN", "SWAG", "VAICO", "VEMO", "METELLI", "GRAF"
-]
+# Style pour un rendu professionnel type catalogue
+st.markdown("""
+    <style>
+    .stDataFrame { font-size: 13px; }
+    thead tr th { background-color: #1f4e79 !important; color: white !important; }
+    .main .block-container { padding-top: 1.5rem; }
+    </style>
+    """, unsafe_allow_html=True)
 
-# 2. IA GEMINI (Expertise technique ciblée)
+# 2. CONFIGURATION IA GEMINI
 api_key = os.getenv("GEMINI_API_KEY") or st.secrets.get("GEMINI_API_KEY")
 if api_key:
     genai.configure(api_key=api_key)
     model = genai.GenerativeModel('gemini-1.5-flash')
 
-def get_rich_specs(oe_ref, brand, iam_ref):
-    """Génère les données techniques façon TecDoc"""
+# --- LISTE "ELITE" DES TOP MARQUES (OEM / RANG 1) ---
+PREMIUM_BRANDS = [
+    "PURFLUX", "MANN-FILTER", "MAHLE", "KNECHT", "BOSCH", "HENGST",
+    "TRW", "ATE", "BREMBO", "DELPHI", "PHINIA", "FERODO", "KYB", "KAYABA", 
+    "MONROE", "LEMFÖRDER", "MOOG", "MEYLE", "SACHS", "BILSTEIN",
+    "LUK", "VALEO", "SKF", "GATES", "INA", "DAYCO", "CONTINENTAL", "CONTITECH",
+    "NTN-SNR", "SNR", "DENSO", "MAGNETI MARELLI", "NGK", "BERU", 
+    "PIERBURG", "HELLA", "BEHR", "NRF", "NISSENS", "FEBI BILSTEIN", 
+    "VAICO", "VEMO", "METELLI", "GRAF"
+]
+
+def get_tecdoc_data(oe_ref, brand, iam_ref):
+    """Analyse technique IA type fiche TecDoc"""
     prompt = f"""
-    Expert automobile Aftermarket. Pour {brand} {iam_ref} (OE {oe_ref}) :
-    1. Description précise du produit.
-    2. Critères techniques (cotes, dents, connectique, spécificités).
-    3. Note de montage ou vigilance technique.
-    Format : DESC | SPECS | NOTE
+    En tant qu'expert Aftermarket, pour la pièce {brand} {iam_ref} (OE {oe_ref}) :
+    Donne : 1. Description | 2. Critères techniques (cotes, dents, connectique) | 3. Conseil de pose.
+    Format : DESC | SPECS | CONSEIL (très court)
     """
     try:
         response = model.generate_content(prompt)
@@ -46,8 +49,8 @@ def get_rich_specs(oe_ref, brand, iam_ref):
         return [p.strip() for p in parts] if len(parts) == 3 else ["N/A"]*3
     except: return ["Données indisponibles"]*3
 
-# 3. LE ROBOT (Scan large Daparto/Aggregateurs)
-def scan_full_market(oe_ref):
+# 3. LE ROBOT SCANNER (Recherche large sur agrégateurs)
+def scan_aftermarket(oe_ref):
     clean_ref = oe_ref.replace(".", "").replace(" ", "").upper()
     url = f"https://www.daparto.fr/recherche-piece/pieces-auto/toutes-marques/{clean_ref}"
     headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0'}
@@ -65,51 +68,56 @@ def scan_full_market(oe_ref):
         return pd.DataFrame(results).drop_duplicates().to_dict('records')
     except: return []
 
-# 4. INTERFACE
+# 4. BARRE LATÉRALE
 st.sidebar.title("🚀 AutoMeta-IAM Pro")
-st.sidebar.caption("Version 3.4 | Top Marques OEM")
+st.sidebar.caption("v3.5 | Test Mode OEM")
 
+st.sidebar.subheader("🚗 Identification")
+vin = st.sidebar.text_input("VIN", placeholder="WVWZZZ...")
+st.sidebar.link_button("🌐 SIV-Auto", "https://siv-auto.fr/", use_container_width=True)
+
+st.sidebar.subheader("📦 Pièce")
 oe_input = st.sidebar.text_input("Référence OE", value="03L121011J")
 
-tab1, tab2 = st.tabs(["🔍 VUES OEM", "📊 ANALYSE IAM PREMIUM"])
+st.sidebar.divider()
+if st.secrets.get("PL24_USER"):
+    st.sidebar.success("🟢 Session PartsLink24 Active")
+
+# 5. CORPS PRINCIPAL
+tab1, tab2 = st.tabs(["🔍 1. VUES ÉCLATÉES OEM", "📊 2. EXPERTISE TECHNIQUE IAM"])
+
+with tab1:
+    st.components.v1.iframe("https://ar-demo.tradesoft.pro/cats/#/catalogs", height=750)
 
 with tab2:
     if oe_input:
-        st.subheader(f"Comparatif Technique IAM : {oe_input}")
+        st.markdown(f"### 📋 Comparatif Aftermarket pour `{oe_input.upper()}`")
         
-        if st.button("⚡ Lancer l'Analyse (Priorité Top Marques)", use_container_width=True):
-            with st.spinner("Recherche et analyse des équipementiers..."):
-                raw_data = scan_full_market(oe_input)
+        if st.button("⚡ Lancer l'Analyse (Top Marques Prioritaires)", use_container_width=True):
+            with st.spinner("Analyse des équipementiers en cours..."):
+                raw_data = scan_aftermarket(oe_input)
                 
                 if raw_data:
                     final_data = []
                     for item in raw_data:
-                        # Vérification de l'appartenance au Top Marques
+                        # Vérifier si c'est une Top Marque
                         is_top = any(m in item['Marque'] for m in PREMIUM_BRANDS)
                         
-                        specs = get_rich_specs(oe_input, item['Marque'], item['Référence'])
+                        specs = get_tecdoc_data(oe_input, item['Marque'], item['Référence'])
                         
                         final_data.append({
-                            "Rang": "🔝 TOP MARQUE" if is_top else "Standard",
+                            "Statut": "🔝 TOP MARQUE" if is_top else "Alternative",
                             "Marque": item['Marque'],
                             "Référence": item['Référence'],
                             "Description": specs[0],
-                            "Critères (Dents/Cotes)": specs[1],
-                            "Expertise / Montage": specs[2]
+                            "Critères (Cotes/Dents)": specs[1],
+                            "Expertise Montage": specs[2]
                         })
                     
-                    # Tri : Les Top Marques remontent systématiquement
-                    df = pd.DataFrame(final_data).sort_values(by="Rang", ascending=False)
-                    
-                    st.dataframe(
-                        df,
-                        column_config={
-                            "Rang": st.column_config.TextColumn("Statut", help="Marques de première monte ou leaders qualité"),
-                        },
-                        hide_index=True,
-                        use_container_width=True
-                    )
+                    # Tri : Top Marques en premier
+                    df = pd.DataFrame(final_data).sort_values(by="Statut", ascending=False)
+                    st.dataframe(df, use_container_width=True, hide_index=True)
                 else:
-                    st.warning("Aucun résultat trouvé pour cette référence.")
+                    st.warning("Aucun résultat trouvé sur les catalogues publics.")
     else:
-        st.info("Saisissez une référence OE dans le menu à gauche.")
+        st.info("Saisissez une référence OE pour activer l'expertise.")
