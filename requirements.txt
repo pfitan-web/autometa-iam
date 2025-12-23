@@ -2,4 +2,8 @@ streamlit
 pandas
 requests
 beautifulsoup4
+streamlit
+pandas
+requests
+beautifulsoup4
 python-dotenv
