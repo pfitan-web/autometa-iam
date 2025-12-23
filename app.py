@@ -1,30 +1,29 @@
 import streamlit as st
 import pandas as pd
 from google import genai
-from google.genai import types
 import os
 from dotenv import load_dotenv
 
 # 1. CONFIGURATION
-st.set_page_config(page_title="AutoMeta-IAM Pro v5.2", layout="wide")
+st.set_page_config(page_title="AutoMeta-IAM Pro v5.3", layout="wide")
 load_dotenv()
 
-# 2. INITIALISATION DU CLIENT (Version Stable)
+# 2. INITIALISATION DU CLIENT (Modèle 2.0)
 api_key = os.getenv("GEMINI_API_KEY") or st.secrets.get("GEMINI_API_KEY")
 
 @st.cache_resource
 def get_client():
     if api_key:
-        # On initialise le client normalement
-        return genai.Client(api_key=api_key, http_options={'api_version': 'v1'})
+        # On utilise la configuration standard sans forçage v1beta
+        return genai.Client(api_key=api_key)
     return None
 
 client = get_client()
 
 # 3. INTERFACE
 st.sidebar.title("🚀 AutoMeta-IAM Pro")
-st.sidebar.caption("v5.2 | Forced API v1")
-oe_input = st.sidebar.text_input("Référence OE", value="1109.AY")
+st.sidebar.caption("v5.3 | Gemini 2.0 Engine")
+oe_input = st.sidebar.text_input("Référence OE", value="1109AY")
 
 tab1, tab2 = st.tabs(["🔍 1. VUES ÉCLATÉES OEM", "📊 2. CATALOGUE COMPLET IAM"])
 
@@ -38,12 +37,12 @@ with tab2:
             if not client:
                 st.error("Clé API manquante dans les Secrets.")
             else:
-                with st.spinner("Interrogation via API v1 Stable..."):
+                with st.spinner("Interrogation du moteur Gemini 2.0..."):
                     try:
-                        # Appel avec forçage du modèle sur la branche stable
+                        # Utilisation du nouveau modèle 2.0 pour éviter le 404
                         response = client.models.generate_content(
-                            model="gemini-1.5-flash",
-                            contents=f"Liste 40 correspondances IAM pour l'OE {oe_input}. Format: MARQUE | REF | DESC | CRITERES"
+                            model="gemini-2.0-flash-exp",
+                            contents=f"Liste 50 correspondances IAM pour l'OE {oe_input}. Format: MARQUE | REF | DESC | CRITERES"
                         )
                         
                         if response.text:
@@ -58,9 +57,10 @@ with tab2:
                                             "Description": cols[2] if len(cols) > 2 else "",
                                             "Critères": cols[3] if len(cols) > 3 else ""
                                         })
-                            st.success(f"✅ {len(data)} références trouvées.")
+                            st.success(f"✅ {len(data)} références identifiées avec Gemini 2.0")
                             st.dataframe(pd.DataFrame(data), use_container_width=True, hide_index=True)
                         else:
-                            st.warning("Réponse vide de l'IA.")
+                            st.warning("Réponse vide. Essayez de vider le cache.")
                     except Exception as e:
                         st.error(f"Détail de l'erreur : {e}")
+                        st.info("💡 Si l'erreur 404 persiste, votre clé API pourrait être restreinte à une région spécifique.")
