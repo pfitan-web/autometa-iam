@@ -1,27 +1,29 @@
 import streamlit as st
 import pandas as pd
-from google import genai # Importation corrigée pour le nouveau SDK
+from google import genai
+from google.genai import types
 import os
 from dotenv import load_dotenv
 
 # 1. CONFIGURATION
-st.set_page_config(page_title="AutoMeta-IAM Pro v5.1", layout="wide")
+st.set_page_config(page_title="AutoMeta-IAM Pro v5.2", layout="wide")
 load_dotenv()
 
-# 2. INITIALISATION DU NOUVEAU CLIENT
+# 2. INITIALISATION DU CLIENT (Version Stable)
 api_key = os.getenv("GEMINI_API_KEY") or st.secrets.get("GEMINI_API_KEY")
 
 @st.cache_resource
 def get_client():
     if api_key:
-        # Nouvelle syntaxe officielle de google-genai
-        return genai.Client(api_key=api_key)
+        # On initialise le client normalement
+        return genai.Client(api_key=api_key, http_options={'api_version': 'v1'})
     return None
 
 client = get_client()
 
-# 3. INTERFACE (Toujours stable et visible)
+# 3. INTERFACE
 st.sidebar.title("🚀 AutoMeta-IAM Pro")
+st.sidebar.caption("v5.2 | Forced API v1")
 oe_input = st.sidebar.text_input("Référence OE", value="1109.AY")
 
 tab1, tab2 = st.tabs(["🔍 1. VUES ÉCLATÉES OEM", "📊 2. CATALOGUE COMPLET IAM"])
@@ -34,11 +36,11 @@ with tab2:
         st.markdown(f"### 📋 Expertise Aftermarket : `{oe_input.upper()}`")
         if st.button("🔥 Générer le Catalogue Complet", use_container_width=True):
             if not client:
-                st.error("Clé API manquante dans les Secrets Streamlit.")
+                st.error("Clé API manquante dans les Secrets.")
             else:
-                with st.spinner("Extraction via SDK Google v5.1..."):
+                with st.spinner("Interrogation via API v1 Stable..."):
                     try:
-                        # Appel corrigé pour le modèle flash
+                        # Appel avec forçage du modèle sur la branche stable
                         response = client.models.generate_content(
                             model="gemini-1.5-flash",
                             contents=f"Liste 40 correspondances IAM pour l'OE {oe_input}. Format: MARQUE | REF | DESC | CRITERES"
@@ -58,5 +60,7 @@ with tab2:
                                         })
                             st.success(f"✅ {len(data)} références trouvées.")
                             st.dataframe(pd.DataFrame(data), use_container_width=True, hide_index=True)
+                        else:
+                            st.warning("Réponse vide de l'IA.")
                     except Exception as e:
-                        st.error(f"Erreur de génération : {e}")
+                        st.error(f"Détail de l'erreur : {e}")
