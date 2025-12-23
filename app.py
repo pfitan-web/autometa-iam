@@ -1,123 +1,106 @@
 import streamlit as st
 import pandas as pd
-import requests
+import cloudscraper # Installation : pip install cloudscraper
 from bs4 import BeautifulSoup
 import google.generativeai as genai
 import os
 from dotenv import load_dotenv
 
-# 1. CONFIGURATION & DESIGN
-st.set_page_config(page_title="AutoMeta-IAM Pro | Expert OEM", layout="wide")
+# 1. CONFIGURATION
+st.set_page_config(page_title="AutoMeta-IAM Pro | Stealth Mode", layout="wide")
 load_dotenv()
 
-# Style pour un rendu professionnel type catalogue
-st.markdown("""
-    <style>
-    .stDataFrame { font-size: 13px; }
-    thead tr th { background-color: #1f4e79 !important; color: white !important; }
-    .main .block-container { padding-top: 1.5rem; }
-    </style>
-    """, unsafe_allow_html=True)
-
-# 2. CONFIGURATION IA GEMINI
+# 2. IA GEMINI (Expertise technique)
 api_key = os.getenv("GEMINI_API_KEY") or st.secrets.get("GEMINI_API_KEY")
 if api_key:
     genai.configure(api_key=api_key)
     model = genai.GenerativeModel('gemini-1.5-flash')
 
-# --- LISTE "ELITE" DES TOP MARQUES (OEM / RANG 1) ---
+# LISTE TOP MARQUES OEM
 PREMIUM_BRANDS = [
-    "PURFLUX", "MANN-FILTER", "MAHLE", "KNECHT", "BOSCH", "HENGST",
-    "TRW", "ATE", "BREMBO", "DELPHI", "PHINIA", "FERODO", "KYB", "KAYABA", 
-    "MONROE", "LEMFÖRDER", "MOOG", "MEYLE", "SACHS", "BILSTEIN",
-    "LUK", "VALEO", "SKF", "GATES", "INA", "DAYCO", "CONTINENTAL", "CONTITECH",
-    "NTN-SNR", "SNR", "DENSO", "MAGNETI MARELLI", "NGK", "BERU", 
-    "PIERBURG", "HELLA", "BEHR", "NRF", "NISSENS", "FEBI BILSTEIN", 
-    "VAICO", "VEMO", "METELLI", "GRAF"
+    "PURFLUX", "MANN-FILTER", "MAHLE", "KNECHT", "BOSCH", "TRW", "ATE", "BREMBO", 
+    "DELPHI", "PHINIA", "KYB", "KAYABA", "MONROE", "LEMFÖRDER", "MEYLE", "SACHS", 
+    "LUK", "VALEO", "SKF", "GATES", "INA", "DAYCO", "NTN-SNR", "SNR", "DENSO"
 ]
 
-def get_tecdoc_data(oe_ref, brand, iam_ref):
-    """Analyse technique IA type fiche TecDoc"""
-    prompt = f"""
-    En tant qu'expert Aftermarket, pour la pièce {brand} {iam_ref} (OE {oe_ref}) :
-    Donne : 1. Description | 2. Critères techniques (cotes, dents, connectique) | 3. Conseil de pose.
-    Format : DESC | SPECS | CONSEIL (très court)
-    """
+def get_iam_analysis(oe_ref, brand, iam_ref):
+    prompt = f"Expert Aftermarket. Analyse {brand} {iam_ref} pour OE {oe_ref}. Donne Specs et Conseil montage (court)."
     try:
         response = model.generate_content(prompt)
-        parts = response.text.split('|')
-        return [p.strip() for p in parts] if len(parts) == 3 else ["N/A"]*3
-    except: return ["Données indisponibles"]*3
+        return response.text
+    except: return "Analyse indisponible"
 
-# 3. LE ROBOT SCANNER (Recherche large sur agrégateurs)
-def scan_aftermarket(oe_ref):
+# 3. LE ROBOT "STEALTH" (Utilisant CloudScraper)
+def scan_iam_stealth(oe_ref):
     clean_ref = oe_ref.replace(".", "").replace(" ", "").upper()
     url = f"https://www.daparto.fr/recherche-piece/pieces-auto/toutes-marques/{clean_ref}"
-    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0'}
+    
+    # Création du scraper qui imite un navigateur réel
+    scraper = cloudscraper.create_scraper(
+        browser={
+            'browser': 'chrome',
+            'platform': 'windows',
+            'desktop': True
+        }
+    )
+    
     results = []
     try:
-        res = requests.get(url, headers=headers, timeout=12)
+        res = scraper.get(url, timeout=15)
         if res.status_code == 200:
             soup = BeautifulSoup(res.text, 'html.parser')
+            # Sélecteurs mis à jour pour les agrégateurs
             items = soup.select('.p-results-list__item') or soup.select('.p-result-item')
+            
             for i in items:
                 b_tag = i.select_one('.p-result-item__manufacturer') or i.select_one('.brand-name')
                 r_tag = i.select_one('.p-result-item__article-number') or i.select_one('.sku')
+                
                 if b_tag and r_tag:
-                    results.append({"Marque": b_tag.text.strip().upper(), "Référence": r_tag.text.strip()})
-        return pd.DataFrame(results).drop_duplicates().to_dict('records')
-    except: return []
+                    results.append({
+                        "Marque": b_tag.text.strip().upper(),
+                        "Référence": r_tag.text.strip()
+                    })
+        return results
+    except Exception as e:
+        st.error(f"Erreur de connexion : {e}")
+        return []
 
-# 4. BARRE LATÉRALE
+# 4. INTERFACE
 st.sidebar.title("🚀 AutoMeta-IAM Pro")
-st.sidebar.caption("v3.5 | Test Mode OEM")
+st.sidebar.caption("v3.6 | Stealth Engine")
+oe_val = st.sidebar.text_input("Référence OE", value="1109AY")
 
-st.sidebar.subheader("🚗 Identification")
-vin = st.sidebar.text_input("VIN", placeholder="WVWZZZ...")
-st.sidebar.link_button("🌐 SIV-Auto", "https://siv-auto.fr/", use_container_width=True)
-
-st.sidebar.subheader("📦 Pièce")
-oe_input = st.sidebar.text_input("Référence OE", value="03L121011J")
-
-st.sidebar.divider()
-if st.secrets.get("PL24_USER"):
-    st.sidebar.success("🟢 Session PartsLink24 Active")
-
-# 5. CORPS PRINCIPAL
-tab1, tab2 = st.tabs(["🔍 1. VUES ÉCLATÉES OEM", "📊 2. EXPERTISE TECHNIQUE IAM"])
-
-with tab1:
-    st.components.v1.iframe("https://ar-demo.tradesoft.pro/cats/#/catalogs", height=750)
+tab1, tab2 = st.tabs(["🔍 IDENTIFICATION", "📊 EXPERTISE IAM"])
 
 with tab2:
-    if oe_input:
-        st.markdown(f"### 📋 Comparatif Aftermarket pour `{oe_input.upper()}`")
+    if oe_val:
+        st.subheader(f"Comparatif Technique pour {oe_val}")
         
-        if st.button("⚡ Lancer l'Analyse (Top Marques Prioritaires)", use_container_width=True):
-            with st.spinner("Analyse des équipementiers en cours..."):
-                raw_data = scan_aftermarket(oe_input)
+        if st.button("⚡ Lancer l'Analyse Stealth", use_container_width=True):
+            with st.spinner(f"Contournement des protections et extraction de {oe_val}..."):
                 
-                if raw_data:
-                    final_data = []
-                    for item in raw_data:
-                        # Vérifier si c'est une Top Marque
+                data = scan_iam_stealth(oe_val)
+                
+                if data:
+                    st.success(f"✅ {len(data)} références trouvées.")
+                    final_rows = []
+                    for item in data:
                         is_top = any(m in item['Marque'] for m in PREMIUM_BRANDS)
+                        analysis = get_iam_analysis(oe_val, item['Marque'], item['Référence'])
                         
-                        specs = get_tecdoc_data(oe_input, item['Marque'], item['Référence'])
-                        
-                        final_data.append({
-                            "Statut": "🔝 TOP MARQUE" if is_top else "Alternative",
+                        final_rows.append({
+                            "Priorité": "🔝 TOP MARQUE" if is_top else "Standard",
                             "Marque": item['Marque'],
                             "Référence": item['Référence'],
-                            "Description": specs[0],
-                            "Critères (Cotes/Dents)": specs[1],
-                            "Expertise Montage": specs[2]
+                            "Analyse IA": analysis
                         })
                     
-                    # Tri : Top Marques en premier
-                    df = pd.DataFrame(final_data).sort_values(by="Statut", ascending=False)
+                    df = pd.DataFrame(final_rows).sort_values(by="Priorité", ascending=False)
                     st.dataframe(df, use_container_width=True, hide_index=True)
                 else:
-                    st.warning("Aucun résultat trouvé sur les catalogues publics.")
-    else:
-        st.info("Saisissez une référence OE pour activer l'expertise.")
+                    st.warning("⚠️ Le site bloque toujours. Activation du mode 'IA Directe'...")
+                    # Fallback IA si même cloudscraper est bloqué
+                    prompt_fail = f"Donne les correspondances Purflux, Mann et Bosch pour OE {oe_val}."
+                    res_fail = model.generate_content(prompt_fail)
+                    st.info(res_fail.text)
