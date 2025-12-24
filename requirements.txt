@@ -1,5 +1,6 @@
 streamlit
 pandas
-google-genai
-groq
-python-dotenv
+selenium
+selenium-stealth
+webdriver-manager
+beautifulsoup4
