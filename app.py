@@ -38,4 +38,20 @@ with tab1:
     else:
         st.subheader("🛠️ Accès Catalogue OEM")
     
-    st.components.v1.iframe("
+    st.components.v1.iframe("https://ar-demo.tradesoft.pro/cats/#/catalogs", height=800, scrolling=True)
+
+with tab2:
+    if not oe_input:
+        st.warning("⚠️ Veuillez saisir une référence OE dans la barre latérale pour lancer l'expertise.")
+    else:
+        st.subheader(f"📊 Analyse Multi-Sources : `{oe_input.upper()}`")
+        
+        expert_links = get_expert_links(oe_input)
+        col1, col2 = st.columns(2)
+        
+        for i, link in enumerate(expert_links):
+            target_col = col1 if i % 2 == 0 else col2
+            with target_col:
+                with st.container(border=True):
+                    st.write(f"**{link['Plateforme']}**")
+                    st.link_button(f"Ouvrir {oe_input.upper()}", link["URL"], use_container_width=True)
