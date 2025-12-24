@@ -2,3 +2,4 @@ streamlit
 pandas
 duckduckgo_search
 google-genai
+openpyxl
