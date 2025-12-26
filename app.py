@@ -3,107 +3,91 @@ import pandas as pd
 import requests
 
 # --- 1. CONFIGURATION ---
-st.set_page_config(page_title="AutoMeta-IAM Pro v12.8", layout="wide")
+st.set_page_config(page_title="AutoMeta-IAM Pro v13.0", layout="wide")
 RAPIDAPI_KEY = st.secrets.get("RAPIDAPI_KEY", None)
 HOST = "tecdoc-catalog.p.rapidapi.com"
 
-# Configuration IDs validés
-LANG_ID = "6"      # Français
-COUNTRY_ID = "85"  # France
+# Marques prioritaires
+PREMIUM_BRANDS = ["PURFLUX", "MANN-FILTER", "KNECHT", "MAHLE", "VALEO", "BOSCH", "HENGST", "FEBI"]
 
-# Liste des marques Premium à surveiller
-PREMIUM_BRANDS = ["PURFLUX", "MANN-FILTER", "KNECHT", "MAHLE", "VALEO", "BOSCH", "HENGST FILTER"]
+# --- 2. FONCTIONS ---
 
-# --- 2. FONCTIONS API ---
-
-def get_iam_catalog(oem_ref):
-    """Recherche OEM avec images"""
+def get_clean_iam(oem_ref):
+    """Recherche IAM avec dédoublonnage strict sur articleNo"""
     clean_ref = oem_ref.replace(" ", "").upper()
-    url = f"https://{HOST}/articles-oem/search-by-article-oem-no/lang-id/{LANG_ID}/article-oem-no/{clean_ref}"
+    url = f"https://{HOST}/articles-oem/search-by-article-oem-no/lang-id/6/article-oem-no/{clean_ref}"
     headers = {"x-rapidapi-key": RAPIDAPI_KEY, "x-rapidapi-host": HOST}
     try:
         res = requests.get(url, headers=headers, timeout=15)
-        return res.json() if res.status_code == 200 else []
-    except: return []
-
-def get_detailed_specs(article_id):
-    """Critères techniques via votre curl"""
-    url = f"https://{HOST}/api/v1/articles/selection-of-all-specifications-criterias-for-the-article/article-id/{article_id}/lang-id/{LANG_ID}/country-filter-id/{COUNTRY_ID}"
-    headers = {"x-rapidapi-key": RAPIDAPI_KEY, "x-rapidapi-host": HOST}
-    try:
-        res = requests.get(url, headers=headers, timeout=5)
-        return res.json() if res.status_code == 200 else []
+        if res.status_code == 200:
+            unique_refs = {}
+            for item in res.json():
+                ref_no = item.get('articleNo')
+                # On ne garde que la 1ère occurrence pour éviter les doublons
+                if ref_no not in unique_refs:
+                    unique_refs[ref_no] = {
+                        "Aperçu": item.get('s3image'),
+                        "Marque": item.get('supplierName', '').upper(),
+                        "Référence": ref_no,
+                        "Produit": item.get('articleProductName'),
+                        "ID": item.get('articleId')
+                    }
+            return list(unique_refs.values())
+        return []
     except: return []
 
 # --- 3. INTERFACE ---
-st.sidebar.title("⚙️ Expertise Pro")
-oe_input = st.sidebar.text_input("📦 Référence OE", value="1109AY")
+st.sidebar.title("⚙️ Expertise Auto")
+oe_input = st.sidebar.text_input("📦 Référence OE", value="1109AY").upper()
 
-tab1, tab2 = st.tabs(["🔍 1. VUES ÉCLATÉES OEM", "🏆 2. CATALOGUE IAM FILTRÉ"])
+tab1, tab2 = st.tabs(["🔍 1. VUES ÉCLATÉES OEM", "🏆 2. CATALOGUE IAM NETTOYÉ"])
 
+# --- TAB 1 : VUES ECLATEES (Restauration) ---
+with tab1:
+    st.subheader(f"🌐 Schémas Constructeurs : `{oe_input}`")
+    c1, c2, c3 = st.columns(3)
+    # Liens basés sur les snippets précédents
+    c1.link_button("🚀 Partsouq (Mondial)", f"https://partsouq.com/en/search/all?q={oe_input}")
+    c2.link_button("🇯🇵 Amayama (Japon/Euro)", f"https://www.amayama.com/en/search?q={oe_input}")
+    c3.link_button("🇷🇺 SSG.asia", f"https://www.ssg.asia/search/?search={oe_input}")
+    
+    st.info("💡 Ces liens ouvrent directement la vue éclatée si la pièce est encore référencée chez le constructeur.")
+
+# --- TAB 2 : CATALOGUE IAM ---
 with tab2:
     if oe_input:
-        if not RAPIDAPI_KEY:
-            st.error("🔑 Clé API manquante.")
-        else:
-            with st.spinner("Analyse du catalogue..."):
-                all_items = get_iam_catalog(oe_input)
+        with st.spinner("Nettoyage du catalogue..."):
+            items = get_clean_iam(oe_input)
+            
+            if items:
+                # Filtrage Premium vs Reste
+                premium = [i for i in items if any(p in i['Marque'] for p in PREMIUM_BRANDS)]
+                others = [i for i in items if i not in premium]
+
+                # Affichage Premium
+                st.markdown("### ⭐ Marques Premium (Sans doublons)")
+                if premium:
+                    st.dataframe(
+                        pd.DataFrame(premium),
+                        column_config={
+                            "Aperçu": st.column_config.ImageColumn("Image", width="small"),
+                            "ID": None
+                        },
+                        hide_index=True,
+                        use_container_width=True
+                    )
                 
-                if all_items:
-                    # Séparation des marques : Premium vs Autres
-                    premium_list = []
-                    others_list = []
-                    
-                    for item in all_items:
-                        brand_name = item.get('supplierName', '').upper()
-                        # On prépare la ligne
-                        row = {
-                            "Photo": item.get('s3image'),
-                            "Marque": brand_name,
-                            "Référence": item.get('articleNo'),
-                            "Produit": item.get('articleProductName'),
-                            "articleId": item.get('articleId')
-                        }
-                        
-                        if any(p in brand_name for p in PREMIUM_BRANDS):
-                            premium_list.append(row)
-                        else:
-                            others_list.append(row)
+                # Sélecteur technique
+                st.divider()
+                selected = st.selectbox("⚖️ Sélectionner pour comparer les dimensions :", 
+                                      [f"{x['Marque']} - {x['Référence']}" for x in premium + others[:10]])
+                
+                if st.button("Afficher la fiche technique"):
+                    st.write(f"Analyse des critères pour `{selected}`...")
+                    # Ici l'appel GET Article Criteria
 
-                    # --- AFFICHAGE PREMIUM ---
-                    st.subheader("⭐ Marques Premium Sélectionnées")
-                    if premium_list:
-                        df_p = pd.DataFrame(premium_list)
-                        st.dataframe(df_p, column_config={"Photo": st.column_config.ImageColumn("Aperçu"), "articleId": None}, hide_index=True, use_container_width=True)
-                        
-                        # Sélecteur pour voir les dimensions d'une marque précise
-                        selected_brand = st.selectbox("🔍 Voir les dimensions techniques de :", [p['Marque'] + " (" + p['Référence'] + ")" for p in premium_list])
-                        
-                        if st.button("Extraire les dimensions"):
-                            # On récupère l'ID correspondant au choix
-                            idx = [p['Marque'] + " (" + p['Référence'] + ")" for p in premium_list].index(selected_brand)
-                            target_id = premium_list[idx]['articleId']
-                            
-                            with st.spinner("Lecture des critères..."):
-                                specs = get_detailed_specs(target_id)
-                                if specs:
-                                    st.write(f"📏 **Spécifications pour {selected_brand} :**")
-                                    cols = st.columns(3)
-                                    for i, s in enumerate(specs[:6]): # Affiche les 6 premiers critères
-                                        cols[i%3].metric(label=s.get('criteriaDescription'), value=s.get('criteriaValue'))
-                    else:
-                        st.info("Aucune marque Premium détectée pour cette référence.")
-
-                    # --- AFFICHAGE AUTRES ---
-                    with st.expander("📦 Voir le reste du catalogue (Autres marques)"):
-                        if others_list:
-                            st.dataframe(pd.DataFrame(others_list), column_config={"Photo": st.column_config.ImageColumn("Aperçu"), "articleId": None}, hide_index=True, use_container_width=True)
-
-        st.divider()
-        # Boutons de secours
-        c1, c2, c3, c4 = st.columns(4)
-        clean = oe_input.lower().replace(" ", "")
-        c1.link_button("Distriauto", f"https://www.distriauto.fr/pieces-auto/oem/{clean}")
-        c2.link_button("Daparto", f"https://www.daparto.fr/recherche-piece/pieces-auto/toutes-marques/{clean}?ref=fulltext")
-        c3.link_button("Oscaro", f"https://www.oscaro.com/fr/search?q={clean}")
-        c4.link_button("Autodoc", f"https://www.auto-doc.fr/search?keyword={clean}")
+                # Reste du catalogue
+                with st.expander("📦 Reste du catalogue (Marques secondaires)"):
+                    st.dataframe(pd.DataFrame(others), column_config={"Aperçu": st.column_config.ImageColumn(), "ID": None}, hide_index=True)
+            else:
+                st.warning("Aucune donnée Aftermarket trouvée.")
