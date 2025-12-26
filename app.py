@@ -3,19 +3,22 @@ import pandas as pd
 import requests
 
 # --- 1. CONFIGURATION ---
-st.set_page_config(page_title="AutoMeta-IAM Pro v14.0", layout="wide")
+st.set_page_config(page_title="AutoMeta-IAM Pro v14.1", layout="wide")
 RAPIDAPI_KEY = st.secrets.get("RAPIDAPI_KEY", None)
 HOST = "tecdoc-catalog.p.rapidapi.com"
 
+# Configuration IDs validés par vos captures
+LANG_ID = "6"      # Français
+COUNTRY_ID = "85"  # France
 PREMIUM_BRANDS = ["PURFLUX", "MANN-FILTER", "KNECHT", "MAHLE", "VALEO", "BOSCH", "HENGST", "FEBI"]
 
 # --- 2. FONCTIONS API ---
 
-@st.cache_data(ttl=3600) # Cache pour éviter de consommer du quota inutilement
-def get_full_data(oem_ref):
-    """Simule un agent : Récupère TOUT d'un coup (IAM + Photos)"""
+@st.cache_data(ttl=600)
+def get_clean_iam(oem_ref):
+    """Recherche Aftermarket avec dédoublonnage"""
     clean_ref = oem_ref.replace(" ", "").upper()
-    url = f"https://{HOST}/articles-oem/search-by-article-oem-no/lang-id/6/article-oem-no/{clean_ref}"
+    url = f"https://{HOST}/articles-oem/search-by-article-oem-no/lang-id/{LANG_ID}/article-oem-no/{clean_ref}"
     headers = {"x-rapidapi-key": RAPIDAPI_KEY, "x-rapidapi-host": HOST}
     try:
         res = requests.get(url, headers=headers, timeout=15)
@@ -30,84 +33,79 @@ def get_full_data(oem_ref):
                         "Photo": item.get('s3image'),
                         "Marque": f"⭐ {brand}" if is_p else brand,
                         "Référence": ref_no,
-                        "Désignation": item.get('articleProductName'),
-                        "ID": item.get('articleId'),
+                        "Produit": item.get('articleProductName'),
+                        "articleId": item.get('articleId'),
                         "is_premium": is_p
                     }
             return list(unique_refs.values())
         return []
     except: return []
 
-def get_specs_direct(article_id):
-    """Récupère les dimensions sans passer par le session_state instable"""
-    url = f"https://{HOST}/api/v1/articles/selection-of-all-specifications-criterias-for-the-article/article-id/{article_id}/lang-id/6/country-filter-id/85"
+def get_specs_force(article_id):
+    """Extraction des critères techniques"""
+    url = f"https://{HOST}/api/v1/articles/selection-of-all-specifications-criterias-for-the-article/article-id/{article_id}/lang-id/{LANG_ID}/country-filter-id/{COUNTRY_ID}"
     headers = {"x-rapidapi-key": RAPIDAPI_KEY, "x-rapidapi-host": HOST}
     try:
         res = requests.get(url, headers=headers, timeout=10)
         return res.json() if res.status_code == 200 else []
     except: return []
 
-# --- 3. INTERFACE (Restauration stricte OEM) ---
+# --- 3. BARRE LATÉRALE (Restauration Liens) ---
 st.sidebar.title("⚙️ Expertise Pro")
-vin_input = st.sidebar.text_input("🔍 Identification VIN")
+vin_input = st.sidebar.text_input("🔍 Identification VIN", placeholder="Saisir VIN...")
+st.sidebar.subheader("🔗 Liens Directs")
+st.sidebar.markdown(f'<a href="https://partsouq.com/en/search/all?q={vin_input}" target="_blank">🚀 PARTSOUQ VIN</a>', unsafe_allow_html=True)
 st.sidebar.markdown('<a href="https://www.siv-auto.fr/" target="_blank">🔗 SIV AUTO</a>', unsafe_allow_html=True)
 st.sidebar.markdown('[🔗 PARTSLINK24](https://www.partslink24.com/)')
 
+# --- 4. INTERFACE ---
 tab1, tab2 = st.tabs(["🔍 1. VUES ÉCLATÉES OEM", "📊 2. ANALYSE TECDOC"])
 
 with tab1:
     if vin_input:
-        st.subheader(f"🛠️ VIN : `{vin_input.upper()}`")
-        st.link_button("🚀 Partsouq VIN", f"https://partsouq.com/en/search/all?q={vin_input}")
+        st.subheader(f"🛠️ Recherche VIN : `{vin_input.upper()}`")
+        c1, c2 = st.columns(2)
+        c1.link_button("🚀 Partsouq", f"https://partsouq.com/en/search/all?q={vin_input}")
+        c2.link_button("🚘 SIV", "https://www.siv-auto.fr/")
     st.components.v1.iframe("https://ar-demo.tradesoft.pro/cats/#/catalogs", height=700, scrolling=True)
 
 with tab2:
-    oe_input = st.text_input("📦 Référence OE Aftermarket", value="1109AY").upper()
+    oe_input = st.text_input("📦 Référence OE pour analyse Aftermarket", value="1109AY").upper()
     
     if oe_input:
-        data = get_full_data(oe_input)
-        
+        data = get_clean_iam(oe_input)
         if data:
             premium = [i for i in data if i['is_premium']]
             others = [i for i in data if not i['is_premium']]
 
-            # --- TABLEAU PRINCIPAL ---
-            st.markdown("### 🏆 Sélection Premium")
-            st.dataframe(
-                pd.DataFrame(premium),
-                column_config={"Photo": st.column_config.ImageColumn("Visuel"), "ID": None, "is_premium": None},
-                hide_index=True, width="stretch"
-            )
+            st.markdown("### 🏆 Sélection Premium (Unique)")
+            st.dataframe(pd.DataFrame(premium), column_config={"Photo": st.column_config.ImageColumn("Visuel"), "articleId": None, "is_premium": None}, hide_index=True, width="stretch")
 
-            # --- ANALYSE TECHNIQUE (Logique sans bouton pour éviter les bugs) ---
             st.divider()
-            st.subheader("📏 Fiche Technique Détaillée")
+            st.subheader("📏 Fiche Technique (Auto-Refresh)")
             
-            # Utilisation d'un sélecteur simple qui déclenche l'affichage auto
-            all_list = premium + others[:5]
-            choice = st.selectbox("Choisir une référence pour voir les cotes :", 
-                                [f"{x['Marque']} - {x['Référence']}" for x in all_list])
+            # Utilisation d'une clé unique pour forcer le rafraîchissement
+            all_list = premium + others
+            choice = st.selectbox("Choisir une référence pour extraire les cotes :", 
+                                [f"{x['Marque']} - {x['Référence']}" for x in all_list],
+                                key="selector_specs")
             
-            # On trouve l'ID immédiatement
-            selected_id = next(x['ID'] for x in all_list if f"{x['Marque']} - {x['Référence']}" == choice)
+            selected_item = next(x for x in all_list if f"{x['Marque']} - {x['Référence']}" == choice)
             
-            with st.spinner("Chargement des dimensions..."):
-                specs = get_specs_direct(selected_id)
+            with st.spinner(f"Interrogation API pour {choice}..."):
+                specs = get_specs_force(selected_item['articleId'])
                 if specs:
-                    # Affichage en colonnes pour plus de clarté (comme en magasin)
+                    # Affichage clair en metrics
                     cols = st.columns(4)
                     for idx, s in enumerate(specs):
                         cols[idx % 4].metric(label=s.get('criteriaDescription'), value=s.get('criteriaValue'))
                 else:
-                    st.warning("Aucune donnée technique pour cette référence précise.")
+                    st.warning(f"⚠️ Aucune donnée technique retournée par TecDoc pour l'ID {selected_item['articleId']}.")
 
             with st.expander("📦 Reste du catalogue"):
                 st.dataframe(pd.DataFrame(others), column_config={"Photo": st.column_config.ImageColumn()}, hide_index=True, width="stretch")
-        else:
-            st.error("Aucune donnée reçue. Vérifiez votre clé API ou la référence.")
 
 st.divider()
-# Liens de secours maintenus
 cx1, cx2, cx3, cx4 = st.columns(4)
 clean = oe_input.lower().replace(" ", "")
 cx1.link_button("Distriauto", f"https://www.distriauto.fr/pieces-auto/oem/{clean}")
