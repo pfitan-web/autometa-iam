@@ -3,11 +3,11 @@ import pandas as pd
 import requests
 
 # --- 1. CONFIGURATION ---
-st.set_page_config(page_title="AutoMeta-IAM Pro v14.2", layout="wide")
+st.set_page_config(page_title="AutoMeta-IAM Pro v14.4", layout="wide")
 RAPIDAPI_KEY = st.secrets.get("RAPIDAPI_KEY", None)
 HOST = "tecdoc-catalog.p.rapidapi.com"
 
-# Configuration IDs validés
+# Paramètres régionaux validés
 LANG_ID = "6"
 COUNTRY_ID = "85"
 PREMIUM_BRANDS = ["PURFLUX", "MANN-FILTER", "KNECHT", "MAHLE", "VALEO", "BOSCH", "HENGST", "FEBI"]
@@ -16,7 +16,7 @@ PREMIUM_BRANDS = ["PURFLUX", "MANN-FILTER", "KNECHT", "MAHLE", "VALEO", "BOSCH",
 
 @st.cache_data(ttl=600)
 def get_clean_iam(oem_ref):
-    """Recherche Aftermarket dédoublonnée"""
+    """Recherche Aftermarket dédoublonnée avec indicateur de copie"""
     clean_ref = oem_ref.replace(" ", "").upper()
     url = f"https://{HOST}/articles-oem/search-by-article-oem-no/lang-id/{LANG_ID}/article-oem-no/{clean_ref}"
     headers = {"x-rapidapi-key": RAPIDAPI_KEY, "x-rapidapi-host": HOST}
@@ -32,7 +32,8 @@ def get_clean_iam(oem_ref):
                     unique_refs[ref_no] = {
                         "Photo": item.get('s3image'),
                         "Marque": f"⭐ {brand}" if is_p else brand,
-                        "Référence": ref_no,
+                        "Référence": f"{ref_no} 📋", # Symbole visuel pour l'utilisateur
+                        "Ref_Pure": ref_no,           # Garde la ref propre pour les API/Fiches
                         "Produit": item.get('articleProductName'),
                         "articleId": item.get('articleId'),
                         "is_premium": is_p
@@ -41,8 +42,8 @@ def get_clean_iam(oem_ref):
         return []
     except: return []
 
-def get_specs_force(article_id):
-    """Extraction forcée des critères"""
+def get_specs_official(article_id):
+    """Extraction technique par ID Article"""
     url = f"https://{HOST}/api/v1/articles/selection-of-all-specifications-criterias-for-the-article/article-id/{article_id}/lang-id/{LANG_ID}/country-filter-id/{COUNTRY_ID}"
     headers = {"x-rapidapi-key": RAPIDAPI_KEY, "x-rapidapi-host": HOST}
     try:
@@ -54,7 +55,7 @@ def get_specs_force(article_id):
 st.sidebar.title("⚙️ Expertise Pro")
 vin_input = st.sidebar.text_input("🔍 Identification VIN", placeholder="Saisir VIN...")
 st.sidebar.subheader("🔗 Liens Directs")
-# Restauration Partsouq
+# Lien Partsouq dynamique restauré
 st.sidebar.markdown(f'<a href="https://partsouq.com/en/search/all?q={vin_input}" target="_blank">🚀 PARTSOUQ VIN</a>', unsafe_allow_html=True)
 st.sidebar.markdown('<a href="https://www.siv-auto.fr/" target="_blank">🔗 SIV AUTO</a>', unsafe_allow_html=True)
 
@@ -79,44 +80,46 @@ with tab2:
             others = df_main[~df_main['is_premium']]
 
             st.markdown("### 🏆 Sélection Premium")
-            # Ajout du bouton de copie intégré au tableau Streamlit
             st.dataframe(
-                premium, 
+                premium[["Photo", "Marque", "Référence", "Produit"]], 
                 column_config={
                     "Photo": st.column_config.ImageColumn("Visuel"),
-                    "Référence": st.column_config.TextColumn("Référence (Cliquable pour copier)", help="Double-cliquez pour copier"),
-                    "articleId": None, 
-                    "is_premium": None
+                    "Référence": st.column_config.TextColumn(
+                        "Référence", 
+                        help="Double-cliquez sur la cellule pour copier la référence rapidement."
+                    )
                 }, 
                 hide_index=True, width="stretch"
             )
 
             st.divider()
-            st.subheader("📏 Fiche Technique & Cotes")
+            st.subheader("📏 Fiche Technique & Copie Rapide")
             
-            # Sélecteur pour les dimensions
-            choice = st.selectbox("Choisir une référence pour extraire les dimensions :", 
-                                [f"{x['Marque']} - {x['Référence']}" for x in data],
+            choice = st.selectbox("Choisir une référence pour les dimensions :", 
+                                [f"{x['Marque']} - {x['Ref_Pure']}" for x in data],
                                 key="spec_selector")
             
-            selected_item = next(x for x in data if f"{x['Marque']} - {x['Référence']}" == choice)
+            selected_item = next(x for x in data if f"{x['Marque']} - {x['Ref_Pure']}" == choice)
             
-            # Bouton de copie rapide juste sous le sélecteur
-            st.code(selected_item['Référence'], language="text") # Affiche la ref en gros, cliquable pour copier
+            # Bloc de copie dédié (le plus efficace)
+            st.info(f"📋 Copier la référence {choice} :")
+            st.code(selected_item['Ref_Pure'], language="text") 
             
             with st.spinner("Analyse technique..."):
-                specs = get_specs_force(selected_item['articleId'])
+                specs = get_specs_official(selected_item['articleId'])
                 if specs:
                     cols = st.columns(4)
                     for idx, s in enumerate(specs):
                         cols[idx % 4].metric(label=s.get('criteriaDescription'), value=s.get('criteriaValue'))
                 else:
-                    st.warning(f"⚠️ Aucune donnée technique retournée pour {choice} (ID: {selected_item['articleId']}).")
+                    st.warning(f"⚠️ Aucune donnée technique pour l'ID {selected_item['articleId']}.")
 
-            with st.expander("📦 Reste du catalogue"):
-                st.dataframe(others, column_config={"Photo": st.column_config.ImageColumn()}, hide_index=True)
+            with st.expander("📦 Voir le reste du catalogue"):
+                st.dataframe(others[["Photo", "Marque", "Référence", "Produit"]], 
+                             column_config={"Photo": st.column_config.ImageColumn()}, 
+                             hide_index=True, width="stretch")
 
-# Liens de secours
+# --- 5. FOOTER ---
 st.divider()
 clean = oe_input.lower().replace(" ", "")
 cx1, cx2, cx3, cx4 = st.columns(4)
