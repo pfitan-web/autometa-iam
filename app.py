@@ -3,7 +3,7 @@ import pandas as pd
 import requests
 
 # --- 1. CONFIGURATION ET STYLE ---
-st.set_page_config(page_title="AutoMeta-IAM Pro v13.1", layout="wide")
+st.set_page_config(page_title="AutoMeta-IAM Pro v13.2", layout="wide")
 RAPIDAPI_KEY = st.secrets.get("RAPIDAPI_KEY", None)
 HOST = "tecdoc-catalog.p.rapidapi.com"
 
@@ -56,7 +56,7 @@ st.sidebar.markdown('[🔗 PARTSLINK24](https://www.partslink24.com/)')
 # --- 4. INTERFACE PRINCIPALE ---
 tab1, tab2 = st.tabs(["🔍 1. VUES ÉCLATÉES OEM", "📊 2. ANALYSE TECDOC FRANCE"])
 
-# --- TAB 1 : VUES ECLATEES OEM (Restauration complète) ---
+# --- TAB 1 : VUES ECLATEES OEM ---
 with tab1:
     if vin_input:
         st.subheader(f"🛠️ Identification en cours : `{vin_input.upper()}`")
@@ -65,12 +65,10 @@ with tab1:
         c2.link_button("🇯🇵 Amayama", f"https://www.amayama.com/en/search?q={vin_input}")
         c3.link_button("🚘 SIV Auto", "https://www.siv-auto.fr/")
     
-    # Iframe Tradesoft maintenue pour la navigation catalogue
     st.components.v1.iframe("https://ar-demo.tradesoft.pro/cats/#/catalogs", height=800, scrolling=True)
 
-# --- TAB 2 : ANALYSE AFTERMARKET (Logique isolée) ---
+# --- TAB 2 : ANALYSE AFTERMARKET ---
 with tab2:
-    # Input spécifique à l'Aftermarket comme demandé
     oe_input = st.text_input("📦 Saisir la Référence OE pour analyse Aftermarket", value="1109AY").upper()
     
     if oe_input:
@@ -80,12 +78,12 @@ with tab2:
             items = get_clean_iam(oe_input)
             
             if items:
-                # Filtrage Premium (Purflux, Mann, etc.)
                 premium = [i for i in items if any(p in i['Marque'] for p in PREMIUM_BRANDS)]
                 others = [i for i in items if i not in premium]
 
                 st.markdown("### ⭐ Sélection Premium (Unique)")
                 if premium:
+                    # Correction ici : width='stretch' au lieu de use_container_width=True
                     st.dataframe(
                         pd.DataFrame(premium),
                         column_config={
@@ -93,10 +91,9 @@ with tab2:
                             "ID": None
                         },
                         hide_index=True,
-                        use_container_width=True
+                        width="stretch" 
                     )
                 
-                # Zone de comparaison technique
                 st.divider()
                 col_sel, col_act = st.columns([2, 1])
                 with col_sel:
@@ -105,7 +102,6 @@ with tab2:
                 
                 with col_act:
                     if st.button("Extraire Dimensions"):
-                        # Récupération de l'articleId correspondant
                         all_match = premium + others
                         target = next(i for i in all_match if f"{i['Marque']} - {i['Référence']}" == selected_label)
                         specs = get_technical_specs(target['ID'])
@@ -114,12 +110,17 @@ with tab2:
                                 st.write(f"🔹 **{s.get('criteriaDescription')}** : {s.get('criteriaValue')}")
                 
                 with st.expander("📦 Voir le reste du catalogue (Dédoublonné)"):
-                    st.dataframe(pd.DataFrame(others), column_config={"Aperçu": st.column_config.ImageColumn()}, hide_index=True)
+                    # Correction ici : width='stretch'
+                    st.dataframe(
+                        pd.DataFrame(others), 
+                        column_config={"Aperçu": st.column_config.ImageColumn()}, 
+                        hide_index=True,
+                        width="stretch"
+                    )
             else:
                 st.warning("Aucun équivalent trouvé pour cette référence.")
 
         st.divider()
-        # Boutons de secours externes
         st.caption("Accès directs rapides :")
         cx1, cx2, cx3, cx4 = st.columns(4)
         clean = oe_input.lower().replace(" ", "")
