@@ -3,20 +3,20 @@ import pandas as pd
 import requests
 
 # --- 1. CONFIGURATION ---
-st.set_page_config(page_title="AutoMeta-IAM Pro v14.1", layout="wide")
+st.set_page_config(page_title="AutoMeta-IAM Pro v14.2", layout="wide")
 RAPIDAPI_KEY = st.secrets.get("RAPIDAPI_KEY", None)
 HOST = "tecdoc-catalog.p.rapidapi.com"
 
-# Configuration IDs validés par vos captures
-LANG_ID = "6"      # Français
-COUNTRY_ID = "85"  # France
+# Configuration IDs validés
+LANG_ID = "6"
+COUNTRY_ID = "85"
 PREMIUM_BRANDS = ["PURFLUX", "MANN-FILTER", "KNECHT", "MAHLE", "VALEO", "BOSCH", "HENGST", "FEBI"]
 
 # --- 2. FONCTIONS API ---
 
 @st.cache_data(ttl=600)
 def get_clean_iam(oem_ref):
-    """Recherche Aftermarket avec dédoublonnage"""
+    """Recherche Aftermarket dédoublonnée"""
     clean_ref = oem_ref.replace(" ", "").upper()
     url = f"https://{HOST}/articles-oem/search-by-article-oem-no/lang-id/{LANG_ID}/article-oem-no/{clean_ref}"
     headers = {"x-rapidapi-key": RAPIDAPI_KEY, "x-rapidapi-host": HOST}
@@ -42,7 +42,7 @@ def get_clean_iam(oem_ref):
     except: return []
 
 def get_specs_force(article_id):
-    """Extraction des critères techniques"""
+    """Extraction forcée des critères"""
     url = f"https://{HOST}/api/v1/articles/selection-of-all-specifications-criterias-for-the-article/article-id/{article_id}/lang-id/{LANG_ID}/country-filter-id/{COUNTRY_ID}"
     headers = {"x-rapidapi-key": RAPIDAPI_KEY, "x-rapidapi-host": HOST}
     try:
@@ -50,64 +50,76 @@ def get_specs_force(article_id):
         return res.json() if res.status_code == 200 else []
     except: return []
 
-# --- 3. BARRE LATÉRALE (Restauration Liens) ---
+# --- 3. BARRE LATÉRALE ---
 st.sidebar.title("⚙️ Expertise Pro")
 vin_input = st.sidebar.text_input("🔍 Identification VIN", placeholder="Saisir VIN...")
 st.sidebar.subheader("🔗 Liens Directs")
+# Restauration Partsouq
 st.sidebar.markdown(f'<a href="https://partsouq.com/en/search/all?q={vin_input}" target="_blank">🚀 PARTSOUQ VIN</a>', unsafe_allow_html=True)
 st.sidebar.markdown('<a href="https://www.siv-auto.fr/" target="_blank">🔗 SIV AUTO</a>', unsafe_allow_html=True)
-st.sidebar.markdown('[🔗 PARTSLINK24](https://www.partslink24.com/)')
 
 # --- 4. INTERFACE ---
 tab1, tab2 = st.tabs(["🔍 1. VUES ÉCLATÉES OEM", "📊 2. ANALYSE TECDOC"])
 
 with tab1:
     if vin_input:
-        st.subheader(f"🛠️ Recherche VIN : `{vin_input.upper()}`")
         c1, c2 = st.columns(2)
         c1.link_button("🚀 Partsouq", f"https://partsouq.com/en/search/all?q={vin_input}")
         c2.link_button("🚘 SIV", "https://www.siv-auto.fr/")
     st.components.v1.iframe("https://ar-demo.tradesoft.pro/cats/#/catalogs", height=700, scrolling=True)
 
 with tab2:
-    oe_input = st.text_input("📦 Référence OE pour analyse Aftermarket", value="1109AY").upper()
+    oe_input = st.text_input("📦 Référence OE Aftermarket", value="1109AY").upper()
     
     if oe_input:
         data = get_clean_iam(oe_input)
         if data:
-            premium = [i for i in data if i['is_premium']]
-            others = [i for i in data if not i['is_premium']]
+            df_main = pd.DataFrame(data)
+            premium = df_main[df_main['is_premium']]
+            others = df_main[~df_main['is_premium']]
 
-            st.markdown("### 🏆 Sélection Premium (Unique)")
-            st.dataframe(pd.DataFrame(premium), column_config={"Photo": st.column_config.ImageColumn("Visuel"), "articleId": None, "is_premium": None}, hide_index=True, width="stretch")
+            st.markdown("### 🏆 Sélection Premium")
+            # Ajout du bouton de copie intégré au tableau Streamlit
+            st.dataframe(
+                premium, 
+                column_config={
+                    "Photo": st.column_config.ImageColumn("Visuel"),
+                    "Référence": st.column_config.TextColumn("Référence (Cliquable pour copier)", help="Double-cliquez pour copier"),
+                    "articleId": None, 
+                    "is_premium": None
+                }, 
+                hide_index=True, width="stretch"
+            )
 
             st.divider()
-            st.subheader("📏 Fiche Technique (Auto-Refresh)")
+            st.subheader("📏 Fiche Technique & Cotes")
             
-            # Utilisation d'une clé unique pour forcer le rafraîchissement
-            all_list = premium + others
-            choice = st.selectbox("Choisir une référence pour extraire les cotes :", 
-                                [f"{x['Marque']} - {x['Référence']}" for x in all_list],
-                                key="selector_specs")
+            # Sélecteur pour les dimensions
+            choice = st.selectbox("Choisir une référence pour extraire les dimensions :", 
+                                [f"{x['Marque']} - {x['Référence']}" for x in data],
+                                key="spec_selector")
             
-            selected_item = next(x for x in all_list if f"{x['Marque']} - {x['Référence']}" == choice)
+            selected_item = next(x for x in data if f"{x['Marque']} - {x['Référence']}" == choice)
             
-            with st.spinner(f"Interrogation API pour {choice}..."):
+            # Bouton de copie rapide juste sous le sélecteur
+            st.code(selected_item['Référence'], language="text") # Affiche la ref en gros, cliquable pour copier
+            
+            with st.spinner("Analyse technique..."):
                 specs = get_specs_force(selected_item['articleId'])
                 if specs:
-                    # Affichage clair en metrics
                     cols = st.columns(4)
                     for idx, s in enumerate(specs):
                         cols[idx % 4].metric(label=s.get('criteriaDescription'), value=s.get('criteriaValue'))
                 else:
-                    st.warning(f"⚠️ Aucune donnée technique retournée par TecDoc pour l'ID {selected_item['articleId']}.")
+                    st.warning(f"⚠️ Aucune donnée technique retournée pour {choice} (ID: {selected_item['articleId']}).")
 
             with st.expander("📦 Reste du catalogue"):
-                st.dataframe(pd.DataFrame(others), column_config={"Photo": st.column_config.ImageColumn()}, hide_index=True, width="stretch")
+                st.dataframe(others, column_config={"Photo": st.column_config.ImageColumn()}, hide_index=True)
 
+# Liens de secours
 st.divider()
-cx1, cx2, cx3, cx4 = st.columns(4)
 clean = oe_input.lower().replace(" ", "")
+cx1, cx2, cx3, cx4 = st.columns(4)
 cx1.link_button("Distriauto", f"https://www.distriauto.fr/pieces-auto/oem/{clean}")
 cx2.link_button("Daparto", f"https://www.daparto.fr/recherche-piece/pieces-auto/toutes-marques/{clean}")
 cx3.link_button("Oscaro", f"https://www.oscaro.com/fr/search?q={clean}")
